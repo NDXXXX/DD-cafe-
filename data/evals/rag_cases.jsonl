@@ -1,0 +1,6 @@
+{"id":"tissues","question":"纸巾在哪里？","reference":"露天座位的纸巾在每张桌子下方的收纳篮里。","expected_document_ids":["tissues"]}
+{"id":"restroom","question":"洗手间怎么走？","reference":"从室内吧台左侧通道直走，洗手间在走廊尽头。","expected_document_ids":["restroom"]}
+{"id":"water","question":"常温饮用水和餐具在哪？","reference":"常温饮用水、吸管和餐具在取餐台自助区。","expected_document_ids":["water"]}
+{"id":"wifi","question":"Wi-Fi 名称是什么？","reference":"顾客无线网络名称是 DD-Guest。","expected_document_ids":["wifi"]}
+{"id":"allergens","question":"严重坚果过敏可以直接听 AI 推荐吗？","reference":"不可以。严重过敏顾客下单前必须向店员确认。","expected_document_ids":["allergens"]}
+{"id":"parking","question":"停车场在哪里？","reference":"当前知识库没有停车场信息，应询问店员。","expected_document_ids":[],"expect_no_evidence":true}

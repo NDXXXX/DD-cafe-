@@ -1,0 +1,80 @@
+[
+  {
+    "id": "dd-latte",
+    "name": "DD 拿铁",
+    "description": "双份浓缩与鲜牛奶，口感圆润，适合第一次到店。",
+    "category": "咖啡",
+    "price_cents": 3200,
+    "temperatures": ["热", "冰"],
+    "tags": ["奶咖", "柔和", "推荐"],
+    "aliases": ["拿铁", "经典拿铁", "DD拿铁"],
+    "image_key": "dd-latte",
+    "available": true,
+    "featured_rank": 100
+  },
+  {
+    "id": "osmanthus-oat-latte",
+    "name": "桂花燕麦拿铁",
+    "description": "桂花香气与燕麦奶融合，甜度轻，乳糖不耐更友好。",
+    "category": "咖啡",
+    "price_cents": 3600,
+    "temperatures": ["热", "冰"],
+    "tags": ["燕麦奶", "花香", "轻甜"],
+    "aliases": ["桂花拿铁", "燕麦拿铁", "桂花燕麦"],
+    "image_key": "osmanthus-oat-latte",
+    "available": true,
+    "featured_rank": 90
+  },
+  {
+    "id": "sea-salt-americano",
+    "name": "美式",
+    "description": "双份浓缩与水，干净清爽，不加奶也不额外加糖。",
+    "category": "咖啡",
+    "price_cents": 3000,
+    "temperatures": ["热", "冰"],
+    "tags": ["黑咖啡", "无奶", "清爽"],
+    "aliases": ["经典美式", "美式咖啡", "冰美式", "热美式", "Americano"],
+    "image_key": "sea-salt-americano",
+    "available": true,
+    "featured_rank": 80
+  },
+  {
+    "id": "yuzu-shaken-coffee",
+    "name": "冰摇柚子咖啡",
+    "description": "柚子果香、气泡感与浓缩咖啡，适合露天座位。",
+    "category": "特调",
+    "price_cents": 3400,
+    "temperatures": ["冰"],
+    "tags": ["果香", "清爽", "无奶"],
+    "aliases": ["柚子咖啡", "冰摇柚子", "柚子特调"],
+    "image_key": "yuzu-shaken-coffee",
+    "available": true,
+    "featured_rank": 100
+  },
+  {
+    "id": "matcha-cloud",
+    "name": "抹茶云顶",
+    "description": "宇治抹茶与轻盈奶盖，茶味明显，甜度适中。",
+    "category": "非咖啡",
+    "price_cents": 3800,
+    "temperatures": ["冰"],
+    "tags": ["抹茶", "奶盖", "含奶"],
+    "aliases": ["抹茶", "抹茶奶盖"],
+    "image_key": "matcha-cloud",
+    "available": true,
+    "featured_rank": 90
+  },
+  {
+    "id": "basque-cheesecake",
+    "name": "巴斯克芝士蛋糕",
+    "description": "焦香表面与绵密芝士，适合搭配美式咖啡。",
+    "category": "甜点",
+    "price_cents": 3200,
+    "temperatures": ["常温"],
+    "tags": ["芝士", "含蛋奶", "甜点"],
+    "aliases": ["巴斯克", "芝士蛋糕", "蛋糕"],
+    "image_key": "basque-cheesecake",
+    "available": true,
+    "featured_rank": 100
+  }
+]

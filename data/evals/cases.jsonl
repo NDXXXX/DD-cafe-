@@ -1,0 +1,6 @@
+{"id":"recommend-unknown","message":"第一次来，不知道喝什么，推荐一下","expected_route":"recommend","required_events":["token"],"forbidden_events":["cart","order"]}
+{"id":"restaurant-question","message":"纸巾在哪里？","expected_route":"recommend","required_events":["token"],"forbidden_events":["cart","order"]}
+{"id":"direct-order","message":"来一杯拿铁","expected_route":"order","required_events":["cart","token"],"forbidden_events":["order"]}
+{"id":"explicit-iced-americano","message":"你好我要一杯冰美式","expected_route":"order","required_events":["cart","token"],"forbidden_events":["order"],"expected_menu_item_id":"sea-salt-americano","expected_temperature":"冰"}
+{"id":"ambiguous-write","message":"帮我加点东西","expected_route":"clarify","required_events":["token"],"forbidden_events":["cart","order"]}
+{"id":"mixed-intent","message":"推荐一杯清爽的并帮我加入购物车","expected_route":"recommend_then_order","required_events":["cart","token"],"forbidden_events":["order"]}
