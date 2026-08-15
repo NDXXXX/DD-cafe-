@@ -11,6 +11,11 @@ class RecommendationHandoff(TypedDict):
     user_authorized_write: bool
 
 
+class ImageAttachment(TypedDict):
+    image_id: str
+    local_path: str
+
+
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     session_id: str
@@ -24,3 +29,4 @@ class AgentState(TypedDict):
     evidence: list[dict[str, Any]]
     handoff: RecommendationHandoff | None
     verification: dict[str, Any]
+    images: list[ImageAttachment]

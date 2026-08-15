@@ -13,6 +13,8 @@ Demonstrate that a restaurant guest can browse a normal menu, ask a warm convers
 - Constrained order agent.
 - Restaurant and menu RAG with CRUD, hybrid retrieval, and reranking.
 - Real-time web-search tool for external information.
+- Multimodal check-in card: image upload, vision understanding, generated or edited card image.
+- Session-token authentication for customer writes and admin-key authentication for knowledge management.
 - Immutable submitted orders, addendum orders, and pending cancellation requests.
 - Runtime and evaluation harness.
 

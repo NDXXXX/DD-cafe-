@@ -41,6 +41,7 @@ describe("App", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes("/api/sessions")) return jsonResponse({ session_id: "session-1", token: "test-token" });
         if (url.includes("/api/menu")) return jsonResponse(menu);
         if (url.includes("/api/orders/session/")) return jsonResponse([]);
         if (url.includes("/api/cart/")) return jsonResponse(emptyCart);

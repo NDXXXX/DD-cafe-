@@ -1,13 +1,36 @@
 import json
 from collections.abc import AsyncIterator, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from openai import AsyncOpenAI, OpenAIError
 
 from app.agents.memory import AGENT_RULES
 from app.agents.router import AgentRoute, RouteDecision
+from app.agents.state import ImageAttachment
+from app.agents.vision import encode_image_data_url
 from app.catalog.schemas import MenuItemView
 from app.rag.schemas import RetrievedDocument
+
+
+def _system_prompt(
+    menu: Sequence[MenuItemView],
+    evidence: Sequence[RetrievedDocument],
+) -> str:
+    menu_context = "\n".join(
+        f"- {item.name}，{item.price_cents / 100:.0f}元，{item.description}，标签：{'、'.join(item.tags)}"
+        for item in menu
+    )
+    evidence_context = "\n".join(
+        f"- {item.title}：{item.evidence}" for item in evidence
+    ) or "无相关餐厅知识"
+    rules_context = "\n".join(f"- {rule}" for rule in AGENT_RULES)
+    return (
+        "你是DD咖啡馆的推荐助手。语气温暖、简洁，先理解偏好再推荐。"
+        "只能依据提供的菜单与餐厅知识回答，不得编造价格、库存或店内设施。"
+        "你没有修改购物车或订单的权限。涉及严重过敏时必须提醒顾客向店员确认。\n\n"
+        f"运行规则：\n{rules_context}\n\n"
+        f"菜单：\n{menu_context}\n\n餐厅知识：\n{evidence_context}"
+    )
 
 
 class RecommendationModel(Protocol):
@@ -25,6 +48,7 @@ class RecommendationModel(Protocol):
         menu: Sequence[MenuItemView],
         evidence: Sequence[RetrievedDocument],
         history: Sequence[tuple[str, str]],
+        images: list[ImageAttachment] | None = None,
     ) -> AsyncIterator[str]: ...
 
 
@@ -51,8 +75,9 @@ class DemoRecommendationModel:
         menu: Sequence[MenuItemView],
         evidence: Sequence[RetrievedDocument],
         history: Sequence[tuple[str, str]],
+        images: list[ImageAttachment] | None = None,
     ) -> AsyncIterator[str]:
-        del history
+        del history, images
         if evidence:
             reply = f"{evidence[0].evidence} 如果现场情况有变化，也可以直接问店员。"
         else:
@@ -136,33 +161,60 @@ class DeepSeekRecommendationModel:
         menu: Sequence[MenuItemView],
         evidence: Sequence[RetrievedDocument],
         history: Sequence[tuple[str, str]],
+        images: list[ImageAttachment] | None = None,
     ) -> AsyncIterator[str]:
-        menu_context = "\n".join(
-            f"- {item.name}，{item.price_cents / 100:.0f}元，{item.description}，标签：{'、'.join(item.tags)}"
-            for item in menu
-        )
-        evidence_context = "\n".join(
-            f"- {item.title}：{item.evidence}" for item in evidence
-        ) or "无相关餐厅知识"
-        rules_context = "\n".join(f"- {rule}" for rule in AGENT_RULES)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是DD咖啡馆的推荐助手。语气温暖、简洁，先理解偏好再推荐。"
-                    "只能依据提供的菜单与餐厅知识回答，不得编造价格、库存或店内设施。"
-                    "你没有修改购物车或订单的权限。涉及严重过敏时必须提醒顾客向店员确认。\n\n"
-                    f"运行规则：\n{rules_context}\n\n"
-                    f"菜单：\n{menu_context}\n\n餐厅知识：\n{evidence_context}"
-                ),
-            }
-        ]
+        del images
+        messages = [{"role": "system", "content": _system_prompt(menu, evidence)}]
         messages.extend(
             {"role": role, "content": content}
             for role, content in history[-6:]
             if role in {"user", "assistant"}
         )
         messages.append({"role": "user", "content": message})
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            stream=True,
+        )
+        async for chunk in stream:
+            text = chunk.choices[0].delta.content
+            if text:
+                yield text
+
+
+class QwenVLRecommendationModel:
+    """Multimodal reply model: same cafe persona, but sees image content blocks."""
+
+    def __init__(self, api_key: str, base_url: str, model: str) -> None:
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model = model
+
+    async def stream_reply(
+        self,
+        message: str,
+        menu: Sequence[MenuItemView],
+        evidence: Sequence[RetrievedDocument],
+        history: Sequence[tuple[str, str]],
+        images: list[ImageAttachment] | None = None,
+    ) -> AsyncIterator[str]:
+        messages = [{"role": "system", "content": _system_prompt(menu, evidence)}]
+        messages.extend(
+            {"role": role, "content": content}
+            for role, content in history[-6:]
+            if role in {"user", "assistant"}
+        )
+        content: list[dict[str, Any]] = [{"type": "text", "text": message}]
+        for image in images or []:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": encode_image_data_url(image["local_path"]),
+                        "detail": "auto",
+                    },
+                }
+            )
+        messages.append({"role": "user", "content": content})
         stream = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,

@@ -360,7 +360,7 @@ button:disabled {
 
 .add-button,
 .icon-button,
-.chat-form button,
+.chat-form button[type="submit"],
 .order-banner > button {
   display: grid;
   place-items: center;
@@ -622,7 +622,7 @@ button:disabled {
 
 .chat-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   padding: 10px 14px 14px;
 }
@@ -643,7 +643,7 @@ button:disabled {
   color: color-mix(in srgb, var(--muted) 88%, transparent);
 }
 
-.chat-form button {
+.chat-form button[type="submit"] {
   align-self: end;
   width: 46px;
   height: 46px;
@@ -883,6 +883,227 @@ button:disabled {
 @keyframes skeleton {
   from { background-position: 110% 0; }
   to { background-position: -110% 0; }
+}
+
+/* ---- Image picker & previews ---- */
+
+.camera-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  align-self: end;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.camera-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.camera-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.image-previews {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 8px;
+  overflow-x: auto;
+}
+
+.image-preview-item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid var(--accent);
+}
+
+.image-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-preview-item.uploading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.image-preview-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+
+.message-images {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.message-image-thumb {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+/* ---- Card generation button ---- */
+
+.card-gen-btn {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.card-gen-btn:hover {
+  opacity: 0.85;
+}
+
+.card-desc {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ---- Check-in card modal ---- */
+
+.checkin-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.checkin-modal {
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px 20px 32px;
+  animation: slideUp 0.25s ease-out;
+}
+
+.checkin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.checkin-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.checkin-preview {
+  position: relative;
+  margin-bottom: 20px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.checkin-preview canvas,
+.checkin-preview img {
+  display: block;
+  width: 100%;
+  border-radius: 16px;
+}
+
+.checkin-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1080 / 1350;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.checkin-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.checkin-download-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 0;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.checkin-download-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.checkin-download-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+@media (min-width: 768px) {
+  .checkin-backdrop {
+    align-items: center;
+  }
+  .checkin-modal {
+    border-radius: 20px;
+    max-height: 85vh;
+  }
 }
 
 @media (min-width: 768px) {

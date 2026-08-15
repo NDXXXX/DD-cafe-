@@ -87,3 +87,16 @@ def route_intent(message: str) -> AgentRoute:
 def requires_restaurant_evidence(message: str) -> bool:
     compact = "".join(message.split()).lower()
     return any(word in compact for word in EVIDENCE_REQUIRED_WORDS)
+
+
+CARD_GENERATION_WORDS = (
+    "生成打卡卡片",
+    "打卡照片",
+    "生成打卡照片",
+    "生成卡片",
+    "来张打卡照片",
+)
+
+
+def is_card_generation_request(message: str) -> bool:
+    return any(word in message for word in CARD_GENERATION_WORDS)

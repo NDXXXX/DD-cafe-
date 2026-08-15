@@ -15,15 +15,24 @@ def create_client() -> TestClient:
     return TestClient(app)
 
 
+def session_token(client: TestClient, session_id: str) -> str:
+    response = client.post("/api/sessions", json={"session_id": session_id})
+    assert response.status_code == 200
+    return response.json()["token"]
+
+
 def test_menu_and_order_flow_rejects_client_price() -> None:
     with create_client() as client:
+        token = session_token(client, "demo-session")
+        auth = {"X-Session-Token": token}
+
         menu_response = client.get("/api/menu")
         assert menu_response.status_code == 200
         assert len(menu_response.json()) == 6
 
         rejected = client.post(
             "/api/cart/demo-session/items",
-            headers={"Idempotency-Key": "reject-client-price-001"},
+            headers={"Idempotency-Key": "reject-client-price-001", **auth},
             json={
                 "table_number": "A12",
                 "menu_item_id": "dd-latte",
@@ -36,6 +45,7 @@ def test_menu_and_order_flow_rejects_client_price() -> None:
 
         missing_idempotency_key = client.post(
             "/api/cart/demo-session/items",
+            headers=auth,
             json={
                 "table_number": "A12",
                 "menu_item_id": "dd-latte",
@@ -47,7 +57,7 @@ def test_menu_and_order_flow_rejects_client_price() -> None:
 
         cart_response = client.post(
             "/api/cart/demo-session/items",
-            headers={"Idempotency-Key": "add-demo-latte-001"},
+            headers={"Idempotency-Key": "add-demo-latte-001", **auth},
             json={
                 "table_number": "A12",
                 "menu_item_id": "dd-latte",
@@ -60,7 +70,7 @@ def test_menu_and_order_flow_rejects_client_price() -> None:
 
         repeated = client.post(
             "/api/cart/demo-session/items",
-            headers={"Idempotency-Key": "add-demo-latte-001"},
+            headers={"Idempotency-Key": "add-demo-latte-001", **auth},
             json={
                 "table_number": "A12",
                 "menu_item_id": "dd-latte",
@@ -73,6 +83,7 @@ def test_menu_and_order_flow_rejects_client_price() -> None:
 
         order_response = client.post(
             "/api/orders",
+            headers=auth,
             json={"session_id": "demo-session", "idempotency_key": "submit-demo-001"},
         )
         assert order_response.status_code == 201

@@ -156,3 +156,11 @@ class IdempotencyRecordModel(Base):
     result_id: Mapped[str] = mapped_column(String(64))
     request_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=now_utc)
+
+
+class SessionModel(Base):
+    __tablename__ = "sessions"
+
+    session_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=now_utc)

@@ -39,6 +39,12 @@ class OrderExecutionResult:
     cancellation: CancellationRequestView | None = None
 
 
+@dataclass(frozen=True)
+class MenuItemMatch:
+    item: MenuItemView
+    token: str
+
+
 class ConstrainedOrderAgent:
     quantity_words: ClassVar[dict[str, int]] = {
         "一": 1,
@@ -120,14 +126,16 @@ class ConstrainedOrderAgent:
         message: str,
         suggested_menu_item_id: str | None,
     ) -> OrderIntent:
-        if any(word in message for word in ("确认订单", "提交订单", "下单", "就这些")):
+        if suggested_menu_item_id is None and any(
+            word in message for word in ("确认订单", "提交订单", "下单", "就这些")
+        ):
             return OrderIntent(action=OrderAction.SUBMIT)
         if "取消订单" in message:
             return OrderIntent(action=OrderAction.CANCEL)
 
         menu = self.catalog.list_available()
-        explicit_items = self._match_menu_items(message, menu)
-        items = explicit_items
+        explicit_matches = self._match_menu_items(message, menu)
+        items = [match.item for match in explicit_matches]
         source = "explicit"
         if not items and suggested_menu_item_id:
             items = [item for item in menu if item.id == suggested_menu_item_id]
@@ -159,6 +167,16 @@ class ConstrainedOrderAgent:
                 action=OrderAction.CLARIFY,
                 clarification="检测到多个商品。为避免点错，请一次只确认一个商品。",
             )
+        if source == "explicit":
+            candidates = self._items_containing_token(explicit_matches[0].token, menu)
+            if len(candidates) > 1:
+                names = "、".join(item.name for item in candidates)
+                return OrderIntent(
+                    action=OrderAction.CLARIFY,
+                    clarification=(
+                        f"「{explicit_matches[0].token}」有好几款：{names}。你要哪一种？"
+                    ),
+                )
         return OrderIntent(
             action=OrderAction.ADD,
             menu_items=tuple(items),
@@ -214,11 +232,11 @@ class ConstrainedOrderAgent:
         ]
         if not lines or (not matched_items and len(lines) > 1):
             return OrderExecutionResult(response="要删除哪一项？请说出具体商品名称。")
-        for line in lines:
+        for index, line in enumerate(lines):
             cart = self.orders.remove_item(
                 session_id,
                 line.id,
-                idempotency_key=request_id,
+                idempotency_key=f"{request_id}:{index}",
             )
         cart = self._verified_cart(session_id, table_number, cart)
         return OrderExecutionResult(response="已从购物车移除。", cart=cart)
@@ -274,35 +292,63 @@ class ConstrainedOrderAgent:
         self,
         message: str,
         menu: list[MenuItemView],
-    ) -> list[MenuItemView]:
+    ) -> list[MenuItemMatch]:
         compact = self._normalize(message)
-        matches: list[tuple[int, int, MenuItemView]] = []
+        matches: list[tuple[int, int, MenuItemMatch]] = []
         for item in menu:
             names = sorted([item.name, *item.aliases], key=len, reverse=True)
             for name in names:
                 normalized_name = self._normalize(name)
                 start = compact.find(normalized_name)
                 if start >= 0:
-                    matches.append((start, start + len(normalized_name), item))
+                    matches.append(
+                        (start, start + len(normalized_name), MenuItemMatch(item, normalized_name))
+                    )
                     break
         return [
-            item
-            for start, end, item in matches
+            match
+            for start, end, match in matches
             if not any(
-                other_item.id != item.id
+                other.item.id != match.item.id
                 and other_start <= start
                 and end <= other_end
                 and other_end - other_start > end - start
-                for other_start, other_end, other_item in matches
+                for other_start, other_end, other in matches
             )
         ]
 
+    def _items_containing_token(
+        self,
+        token: str,
+        menu: list[MenuItemView],
+    ) -> list[MenuItemView]:
+        return [
+            item
+            for item in menu
+            if any(token in self._normalize(name) for name in [item.name, *item.aliases])
+        ]
+
     def _quantity(self, message: str, default: int | None = 1) -> int | None:
-        match = re.search(r"(\d+|[一二两三四五六七八九十])\s*(?:杯|份|个)", message)
+        match = re.search(r"(\d+|[一二两三四五六七八九十]+)\s*(?:杯|份|个)", message)
         if match is None:
             return default
         raw = match.group(1)
-        return int(raw) if raw.isdigit() else self.quantity_words[raw]
+        return int(raw) if raw.isdigit() else self._chinese_quantity(raw)
+
+    @classmethod
+    def _chinese_quantity(cls, raw: str) -> int:
+        if raw in cls.quantity_words:
+            return cls.quantity_words[raw]
+        total = 0
+        for char in raw:
+            digit = cls.quantity_words.get(char)
+            if digit is None:
+                continue
+            if char == "十":
+                total = total * 10 if total else 10
+            else:
+                total += digit
+        return total
 
     @staticmethod
     def _temperature(message: str) -> str | None:

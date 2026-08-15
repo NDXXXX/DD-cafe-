@@ -1,0 +1,25 @@
+.git
+.gitignore
+.DS_Store
+
+# Secrets — never bake these into images
+.env
+.env.example
+
+# Docs and node/py artifacts
+README.md
+AGENTS.md
+docs
+node_modules
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/dist
+**/coverage
+
+# Runtime-generated / eval-only data
+data/uploads
+data/evals
+apps/api/tests

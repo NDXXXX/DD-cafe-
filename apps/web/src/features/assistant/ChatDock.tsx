@@ -1,16 +1,21 @@
-import { ArrowUp, ShoppingBag, Sparkle, X } from "@phosphor-icons/react";
+import { ArrowUp, Camera, ShoppingBag, Sparkle, X } from "@phosphor-icons/react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-import type { Cart } from "../../shared/api/types";
+import type { Cart, ImageRef } from "../../shared/api/types";
 
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
   failed?: boolean;
+  images?: ImageRef[];
+  cardCaption?: string;
+  cardDescription?: string;
+  cardImages?: ImageRef[];
 }
 
 interface ChatDockProps {
+  sessionId: string;
   open: boolean;
   cart: Cart | null;
   messages: ChatMessage[];
@@ -18,7 +23,8 @@ interface ChatDockProps {
   onOpen: () => void;
   onClose: () => void;
   onCartOpen: () => void;
-  onSend: (message: string) => void;
+  onSend: (message: string, images: ImageRef[]) => void;
+  onGenerateCard: (message: ChatMessage) => void;
 }
 
 const quickPrompts = ["推荐一杯不太甜的", "来一杯拿铁", "纸巾在哪里？"];
@@ -28,6 +34,7 @@ function money(cents: number): string {
 }
 
 export function ChatDock({
+  sessionId,
   open,
   cart,
   messages,
@@ -36,8 +43,13 @@ export function ChatDock({
   onClose,
   onCartOpen,
   onSend,
+  onGenerateCard,
 }: ChatDockProps) {
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<ImageRef[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,9 +66,39 @@ export function ChatDock({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const message = input.trim();
-    if (!message || busy) return;
+    if ((!message && pendingImages.length === 0) || busy) return;
     setInput("");
-    onSend(message);
+    const images = [...pendingImages];
+    setPendingImages([]);
+    onSend(message, images);
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setUploadError("");
+    // Import uploadImage dynamically to avoid circular dependency issues
+    const { uploadImage } = await import("../../shared/api/client");
+    const uploaded: ImageRef[] = [];
+    let failure = "";
+    for (const file of Array.from(files).slice(0, 3 - pendingImages.length)) {
+      try {
+        const ref = await uploadImage(sessionId, file);
+        uploaded.push(ref);
+      } catch (error) {
+        failure = error instanceof Error ? error.message : "图片上传失败";
+      }
+    }
+    setPendingImages((prev) => [...prev, ...uploaded].slice(0, 3));
+    setUploadError(failure);
+    setUploading(false);
+    // Reset the file input so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeImage = (imageId: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.image_id !== imageId));
   };
 
   if (!open) {
@@ -107,7 +149,31 @@ export function ChatDock({
               key={message.id}
             >
               {message.role === "assistant" && <Sparkle size={14} weight="fill" />}
-              <p>{message.text || "正在整理回答…"}</p>
+              <div>
+                <p>{message.text || "正在整理回答…"}</p>
+                {message.images && message.images.length > 0 && (
+                  <div className="message-images">
+                    {message.images.map((img) => (
+                      <img
+                        key={img.image_id}
+                        src={`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}${img.url}`}
+                        alt=""
+                        className="message-image-thumb"
+                      />
+                    ))}
+                  </div>
+                )}
+                {message.cardDescription && <p className="card-desc">{message.cardDescription}</p>}
+                {message.cardCaption && (
+                  <button
+                    className="card-gen-btn"
+                    type="button"
+                    onClick={() => onGenerateCard(message)}
+                  >
+                    生成打卡卡片
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {busy && (
@@ -119,9 +185,33 @@ export function ChatDock({
           )}
         </div>
 
+        {uploadError && <p className="inline-error">{uploadError}</p>}
+
+        {pendingImages.length > 0 && (
+          <div className="image-previews" aria-label="待发送图片">
+            {pendingImages.map((img) => (
+              <div className="image-preview-item" key={img.image_id}>
+                <img
+                  src={`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}${img.url}`}
+                  alt=""
+                />
+                <button
+                  type="button"
+                  className="image-preview-remove"
+                  aria-label="移除图片"
+                  onClick={() => removeImage(img.image_id)}
+                >
+                  <X size={12} weight="bold" />
+                </button>
+              </div>
+            ))}
+            {uploading && <div className="image-preview-item uploading">上传中…</div>}
+          </div>
+        )}
+
         <div className="quick-prompts" aria-label="快捷问题">
           {quickPrompts.map((prompt) => (
-            <button key={prompt} type="button" disabled={busy} onClick={() => onSend(prompt)}>
+            <button key={prompt} type="button" disabled={busy} onClick={() => onSend(prompt, [])}>
               {prompt}
             </button>
           ))}
@@ -131,6 +221,16 @@ export function ChatDock({
           <label className="sr-only" htmlFor="chat-input">
             想对 DD 说什么
           </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            capture="environment"
+            className="sr-only"
+            id="image-upload"
+            onChange={(e) => { void handleFileChange(e); }}
+          />
           <textarea
             id="chat-input"
             rows={1}
@@ -145,7 +245,20 @@ export function ChatDock({
               }
             }}
           />
-          <button type="submit" aria-label="发送消息" disabled={busy || !input.trim()}>
+          <button
+            type="button"
+            className="camera-button"
+            aria-label="拍照或上传图片"
+            disabled={busy || pendingImages.length >= 3}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Camera size={20} />
+          </button>
+          <button
+            type="submit"
+            aria-label="发送消息"
+            disabled={busy || (!input.trim() && pendingImages.length === 0)}
+          >
             <ArrowUp size={20} weight="bold" />
           </button>
         </form>

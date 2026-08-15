@@ -16,13 +16,17 @@ def test_chat_sse_stream_emits_cart_tokens_and_done() -> None:
     )
 
     with TestClient(app) as client:
+        token = client.post(
+            "/api/sessions", json={"session_id": "chat-guest"}
+        ).json()["token"]
         response = client.post(
             "/api/chat/stream",
+            headers={"X-Session-Token": token},
             json={
                 "session_id": "chat-guest",
                 "table_number": "A12",
                 "request_id": "chat-request-001",
-                "message": "来一杯拿铁",
+                "message": "来一杯冰美式",
             },
         )
 

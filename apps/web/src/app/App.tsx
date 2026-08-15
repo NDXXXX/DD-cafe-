@@ -1,13 +1,15 @@
 import { MapPin } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatDock, type ChatMessage } from "../features/assistant/ChatDock";
+import { CheckInCard } from "../features/assistant/CheckInCard";
 import { CartSheet } from "../features/cart/CartSheet";
 import { MenuSection } from "../features/menu/MenuSection";
 import { OrderBanner } from "../features/order/OrderBanner";
 import {
   addCartItem,
   changeCartItem,
+  createSession,
   fetchCart,
   fetchMenu,
   fetchOrders,
@@ -15,19 +17,23 @@ import {
   streamChat,
   submitOrder,
 } from "../shared/api/client";
-import type { Cart, CartItem, ChatEvent, MenuItem, Order } from "../shared/api/types";
+import type { Cart, CartItem, ChatEvent, ImageRef, MenuItem, Order } from "../shared/api/types";
 
-const TABLE_NUMBER = "A12";
+function getTableNumber(): string {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("table") || "A01";
+}
 
 function randomId(): string {
   return crypto.randomUUID();
 }
 
-function getSessionId(): string {
-  const stored = localStorage.getItem("dd-cafe-session");
+function getSessionId(tableNumber: string): string {
+  const key = `dd-cafe-session:${tableNumber}`;
+  const stored = localStorage.getItem(key);
   if (stored) return stored;
   const created = randomId();
-  localStorage.setItem("dd-cafe-session", created);
+  localStorage.setItem(key, created);
   return created;
 }
 
@@ -37,8 +43,15 @@ const welcomeMessage: ChatMessage = {
   text: "你好，我可以根据口味帮你选，也可以直接把明确的商品加入购物车。",
 };
 
+interface CardState {
+  imageUrl: string;
+  caption: string;
+  tableNumber: string;
+}
+
 export function App() {
-  const sessionId = useMemo(getSessionId, []);
+  const tableNumber = useMemo(getTableNumber, []);
+  const sessionId = useMemo(() => getSessionId(tableNumber), [tableNumber]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<Cart | null>(null);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
@@ -55,14 +68,18 @@ export function App() {
   const [busyLineId, setBusyLineId] = useState<number | null>(null);
   const [cartError, setCartError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [cardState, setCardState] = useState<CardState | null>(null);
+  const [pendingCancellation, setPendingCancellation] = useState(false);
+  const submitKeyRef = useRef("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
+      await createSession(sessionId);
       const [menuItems, currentCart, orders] = await Promise.all([
         fetchMenu(),
-        fetchCart(sessionId, TABLE_NUMBER),
+        fetchCart(sessionId, tableNumber),
         fetchOrders(sessionId),
       ]);
       setMenu(menuItems);
@@ -93,7 +110,7 @@ export function App() {
     try {
       const updated = await addCartItem(
         sessionId,
-        TABLE_NUMBER,
+        tableNumber,
         item.id,
         temperatures[item.id] ?? item.temperatures[0],
         randomId(),
@@ -143,10 +160,14 @@ export function App() {
     if (!cart || cart.items.length === 0) return;
     setSubmitting(true);
     setCartError("");
+    if (!submitKeyRef.current) submitKeyRef.current = randomId();
+    const idempotencyKey = submitKeyRef.current;
     try {
-      const order = await submitOrder(sessionId, randomId(), lastOrder?.id);
+      const order = await submitOrder(sessionId, idempotencyKey, lastOrder?.id);
+      submitKeyRef.current = "";
       setLastOrder(order);
-      setCart(await fetchCart(sessionId, TABLE_NUMBER));
+      setPendingCancellation(false);
+      setCart(await fetchCart(sessionId, tableNumber));
       setCartOpen(false);
       setToast("订单已提交");
     } catch (error) {
@@ -156,14 +177,20 @@ export function App() {
     }
   };
 
-  const sendMessage = async (message: string) => {
-    if (chatBusy || !message.trim()) return;
+  const sendMessage = async (message: string, images: ImageRef[]) => {
+    if (chatBusy) return;
+    if (!message.trim() && images.length === 0) return;
     setChatOpen(true);
     const requestId = randomId();
     const assistantId = `assistant-${requestId}`;
     setMessages((current) => [
       ...current,
-      { id: `user-${requestId}`, role: "user", text: message },
+      {
+        id: `user-${requestId}`,
+        role: "user",
+        text: message || " ",
+        images: images.length > 0 ? images : undefined,
+      },
       { id: assistantId, role: "assistant", text: "" },
     ]);
     setChatBusy(true);
@@ -179,7 +206,29 @@ export function App() {
         setCart(event.cart);
       } else if (event.type === "order") {
         setLastOrder(event.order);
-        void fetchCart(sessionId, TABLE_NUMBER).then(setCart);
+        setPendingCancellation(false);
+        void fetchCart(sessionId, tableNumber).then(setCart);
+      } else if (event.type === "cancellation") {
+        setPendingCancellation(true);
+      } else if (event.type === "checkin_card") {
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === assistantId
+              ? {
+                  ...item,
+                  cardCaption: event.caption,
+                  cardDescription: event.description,
+                  cardImages: images,
+                }
+              : item,
+          ),
+        );
+      } else if (event.type === "generated_card") {
+        setCardState({
+          imageUrl: `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}${event.image_url}`,
+          caption: event.caption,
+          tableNumber,
+        });
       } else if (event.type === "error") {
         setMessages((current) =>
           current.map((item) =>
@@ -191,7 +240,7 @@ export function App() {
 
     try {
       await streamChat(
-        { sessionId, tableNumber: TABLE_NUMBER, requestId, message },
+        { sessionId, tableNumber: tableNumber, requestId, message, images },
         handleEvent,
       );
     } catch (error) {
@@ -206,6 +255,19 @@ export function App() {
     }
   };
 
+  const handleGenerateCard = (message: ChatMessage) => {
+    const cardImages = message.cardImages ?? message.images;
+    const imageUrl = cardImages?.[0]
+      ? `${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}${cardImages[0].url}`
+      : "";
+    if (!imageUrl) return;
+    setCardState({
+      imageUrl,
+      caption: message.cardCaption ?? "今天也是被DD治愈的一天",
+      tableNumber: tableNumber,
+    });
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -216,9 +278,9 @@ export function App() {
             <small>点餐与店内助手</small>
           </div>
         </div>
-        <div className="table-badge" aria-label={`${TABLE_NUMBER}桌`}>
+        <div className="table-badge" aria-label={`${tableNumber}桌`}>
           <MapPin size={15} weight="fill" />
-          {TABLE_NUMBER} 桌
+          {tableNumber} 桌
         </div>
       </header>
 
@@ -228,7 +290,13 @@ export function App() {
         <span>告诉 DD 你的口味、预算或当下心情。</span>
       </section>
 
-      {lastOrder && <OrderBanner order={lastOrder} onChatOpen={() => setChatOpen(true)} />}
+      {lastOrder && (
+        <OrderBanner
+          order={lastOrder}
+          cancelling={pendingCancellation}
+          onChatOpen={() => setChatOpen(true)}
+        />
+      )}
 
       <MenuSection
         items={menu}
@@ -250,6 +318,7 @@ export function App() {
       {toast && <div className="toast" role="status">{toast}</div>}
 
       <ChatDock
+        sessionId={sessionId}
         open={chatOpen}
         cart={cart}
         messages={messages}
@@ -257,7 +326,8 @@ export function App() {
         onOpen={() => setChatOpen(true)}
         onClose={() => setChatOpen(false)}
         onCartOpen={() => setCartOpen(true)}
-        onSend={(message) => void sendMessage(message)}
+        onSend={(message, images) => void sendMessage(message, images)}
+        onGenerateCard={(message) => handleGenerateCard(message)}
       />
 
       {cartOpen && !chatOpen && (
@@ -270,6 +340,16 @@ export function App() {
           onChange={(item, quantity) => void updateLine(item, quantity)}
           onRemove={(item) => void removeLine(item)}
           onSubmit={() => void confirmOrder()}
+        />
+      )}
+
+      {cardState && (
+        <CheckInCard
+          imageUrl={cardState.imageUrl}
+          caption={cardState.caption}
+          cafeName="DD 咖啡馆"
+          tableNumber={cardState.tableNumber}
+          onClose={() => setCardState(null)}
         />
       )}
     </main>

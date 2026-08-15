@@ -123,16 +123,39 @@ async def test_order_agent_adds_validated_item_and_emits_cart(runtime) -> None:
             session_id="guest-1",
             table_number="A12",
             request_id="request-add-001",
-            message="来一杯拿铁",
+            message="来一杯桂花燕麦拿铁",
         )
     ]
 
     cart_event = next(event for event in events if event["type"] == "cart")
-    assert cart_event["cart"]["total_cents"] == 3200
+    assert cart_event["cart"]["total_cents"] == 3600
     assert cart_event["cart"]["items"][0]["temperature"] == "热"
     with database.session_factory() as session:
         cart = OrderService(session).get_cart("guest-1", "A12")
         assert cart.total_quantity == 1
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_latte_clarifies_without_cart_write(runtime) -> None:
+    agent, database = runtime
+
+    events = [
+        event
+        async for event in agent.stream(
+            session_id="guest-ambiguous-latte",
+            table_number="A12",
+            request_id="request-ambiguous-latte-001",
+            message="来一杯拿铁",
+        )
+    ]
+
+    response = "".join(event["text"] for event in events if event["type"] == "token")
+    assert not any(event["type"] == "cart" for event in events)
+    assert "有好几款" in response
+    assert "DD 拿铁" in response
+    assert "桂花燕麦拿铁" in response
+    with database.session_factory() as session:
+        assert OrderService(session)._find_cart("guest-ambiguous-latte") is None
 
 
 @pytest.mark.asyncio
@@ -305,3 +328,44 @@ async def test_ambiguous_order_request_does_not_mutate_cart(runtime) -> None:
     assert "具体商品" in text
     with database.session_factory() as session:
         assert OrderService(session)._find_cart("guest-3") is None
+
+
+@pytest.mark.asyncio
+async def test_multi_item_remove_clears_all_matching_lines(runtime) -> None:
+    agent, database = runtime
+
+    with database.session_factory() as session:
+        service = OrderService(session)
+        service.add_item(
+            "guest-remove-multi",
+            "A12",
+            "sea-salt-americano",
+            quantity=1,
+            temperature="冰",
+            idempotency_key="rm-add-americano",
+        )
+        service.add_item(
+            "guest-remove-multi",
+            "A12",
+            "basque-cheesecake",
+            quantity=1,
+            temperature="常温",
+            idempotency_key="rm-add-cake",
+        )
+
+    events = [
+        event
+        async for event in agent.stream(
+            session_id="guest-remove-multi",
+            table_number="A12",
+            request_id="rm-request-001",
+            message="删掉美式和巴斯克",
+        )
+    ]
+
+    cart_event = next(event for event in events if event["type"] == "cart")
+    assert cart_event["cart"]["items"] == []
+    with database.session_factory() as session:
+        assert (
+            OrderService(session).get_cart("guest-remove-multi", "A12").total_quantity == 0
+        )

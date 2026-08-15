@@ -15,6 +15,11 @@
 - Optional real-time web search and optional DeepSeek streaming model.
 - Deterministic no-key demo model and labelled demo menu/restaurant data.
 - Agent safety harness, deterministic RAG harness, and optional four-metric RAGAS evaluator.
+- Customer session-token authentication (`X-Session-Token`) and admin-key authentication (`X-Admin-Key`, fail-closed) for knowledge management.
+- Multimodal check-in card: image upload with client-side resize, QwenVL vision understanding, QwenVL reply, DashScope image generation/edit, and a generated card in the chat.
+- Redis-backed checkpoints with graceful fallback to an in-memory saver when Redis is unavailable.
+- Production Dockerfiles (API and nginx-served web), Compose services for api/web wired to postgres/redis/qdrant, and a GitHub Actions CI pipeline (API lint + test, web test + build).
+- Unit tests for the real model layer (route classification and streaming), authentication (401/403 paths), SSE parsing, and handoff verification, alongside regression tests for multi-item removal.
 - Passing API tests and Ruff, web test and production build, harness cases, migrations, and Compose validation.
 - Manual mobile-browser verification of menu add, quantity change, submit, addendum, RAG question, chat add, and backdrop close.
 

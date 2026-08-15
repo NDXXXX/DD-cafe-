@@ -13,8 +13,10 @@
 - **受约束订单 Agent**：只接受明确、结构化的点单意图；商品、温度、糖度和数量必须与用户表达及菜单数据一致。
 - **订单安全边界**：价格、库存、金额和订单状态全部以 PostgreSQL 为准，模型不能通过自由文本直接修改购物车。
 - **混合 RAG**：组合向量召回、中文 BM25、RRF 融合、BGE Cross-Encoder 精排、查询改写和证据过滤。
+- **多模态打卡卡**：上传图片 → QwenVL 视觉理解与回复 → DashScope 文生图/改图 → 在聊天中生成可分享的打卡卡。
+- **鉴权**：顾客写操作使用服务端签发的会话令牌，知识库管理使用 admin key（未配置时 fail-closed）。
 - **持续服务**：提交订单后仍可追加商品、申请取消或继续询问餐厅服务信息。
-- **可验证执行**：提供单元测试、Agent 安全 Harness、RAG 检索 Harness、前端测试和生产构建检查。
+- **可验证执行**：提供单元测试、Agent 安全 Harness、RAG 检索 Harness、前端测试、生产构建检查和 CI。
 
 ## 系统架构
 
@@ -78,17 +80,38 @@ Query Rewrite
 - 取消操作创建待处理请求，为后续员工确认流程保留边界。
 - 成功事件只会在事务提交并完成数据库回读后发送。
 
+## 鉴权
+
+系统采用两类机制，且都默认 fail-closed：
+
+- **顾客写操作**：前端加载时调用 `POST /api/sessions`，服务端按 `session_id` get-or-create 一行记录并返回随机不透明令牌（`secrets.token_urlsafe`）。令牌存于 `localStorage`，写请求带 `X-Session-Token`，服务端用 `secrets.compare_digest` 校验。购物车、订单、取消、聊天、图片上传以及读回购物车/订单都需校验，避免跨会话篡改或信息泄露。图片展示接口保持开放，因为 `<img>` 标签无法携带请求头。
+- **知识库管理**：`create / update / delete / reindex` 需要 `X-Admin-Key`；未配置 admin key 时这些端点直接返回 403，不会降级为开放。
+
+设计取舍见 [`docs/decisions/README.md`](docs/decisions/README.md) 的 ADR-001。
+
+## 多模态打卡卡
+
+聊天中上传图片会走一条独立的多模态链路：
+
+1. 前端在客户端压缩/缩放图片后上传；
+2. API 将图片送入 QwenVL 视觉模型做理解与回复；
+3. 需要时调用 DashScope 文生图/改图生成一张打卡卡；
+4. 生成的图片保存在上传目录，通过同一图片接口回传；
+5. 前端用 `CheckInCard` 组件在聊天里渲染可分享的打卡卡。
+
+这条链路依赖 `VISION_API_KEY`（DashScope/阿里云百炼），未配置时聊天退化为纯文本，不影响其余功能。
+
 ## 技术栈
 
 | 层级 | 技术 | 作用 |
 |---|---|---|
 | Web | React 19、TypeScript、Vite、Tailwind CSS | 移动端菜单、购物车和对话界面 |
 | API | FastAPI、Pydantic、SQLAlchemy、Alembic | 接口、业务模型和数据库迁移 |
-| Agent | LangGraph、DeepSeek | Supervisor、推荐 Agent、订单 Agent 与流式生成 |
+| Agent | LangGraph、DeepSeek、QwenVL、DashScope | Supervisor、推荐/订单 Agent、多模态理解与图像生成 |
 | RAG | Qdrant、BGE、BM25、jieba、RRF | 混合召回、融合、精排和证据过滤 |
 | Storage | PostgreSQL、Redis | 业务事实、知识文档、幂等记录和短期 Checkpoint |
 | Evaluation | Pytest、RAGAS、Vitest、Ruff | Agent 安全、检索质量、前端与代码质量验证 |
-| Infrastructure | Docker Compose、pnpm、uv | 本地依赖、包管理和一键验证 |
+| Infrastructure | Docker、Docker Compose、GitHub Actions、pnpm、uv | 本地依赖、一键验证、镜像与 CI |
 
 ## 快速开始
 
@@ -98,6 +121,7 @@ Query Rewrite
 - Python 3.12 与 `uv`
 - Node.js、Corepack 与 pnpm
 - DeepSeek API Key（可选；无 Key 时使用确定性 Demo Responder）
+- DashScope（阿里云百炼）API Key（可选；用于视觉理解与图像生成）
 
 ### 安装依赖
 
@@ -110,10 +134,12 @@ corepack pnpm install
 cd apps/api && uv sync && cd ../..
 ```
 
-如需接入 DeepSeek，在 `.env` 中填写：
+如需接入真实模型，在 `.env` 中填写（均可选；缺省时回退到确定性 Demo Responder / 纯文本聊天）：
 
 ```dotenv
-DEEPSEEK_API_KEY=your-real-deepseek-api-key
+DEEPSEEK_API_KEY=your-deepseek-api-key   # 推荐与路由兜底
+VISION_API_KEY=your-dashscope-api-key    # 视觉理解、回复、图像生成/编辑
+ADMIN_API_KEY=your-admin-key             # 知识库管理鉴权（不配置则 CRUD 关闭）
 ```
 
 `.env` 已被 Git 忽略，请勿提交真实密钥。
@@ -170,6 +196,25 @@ make eval-rag-reranker
 ```bash
 make eval-ragas
 ```
+
+## 部署
+
+### Docker Compose（推荐）
+
+`infra/compose.yaml` 一键启动 PostgreSQL、Redis、Qdrant、API 和 Web 五个服务：
+
+```bash
+docker compose -f infra/compose.yaml up -d --build
+```
+
+- Web（nginx，同源代理 `/api/`）: <http://localhost:8080>
+- API: <http://localhost:8000>
+
+`api` 与 `web` 使用多阶段 Dockerfile：`apps/api/Dockerfile`（uv 安装依赖）与 `apps/web/Dockerfile`（pnpm 构建 + nginx 服务静态产物）。上传图片与下载的模型分别挂在 `uploads-data`、`model-cache` 命名卷上。若 Redis 暂不可用，检查点会自动回退到内存实现，API 仍可启动。
+
+### CI
+
+`.github/workflows/ci.yml` 在 push 和 pull request 时运行：API 的 Ruff 检查与 pytest，以及 Web 的 Vitest 与生产构建。
 
 ## 项目结构
 

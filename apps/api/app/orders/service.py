@@ -242,7 +242,14 @@ class OrderService:
                 result_id=order.id,
             )
         )
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            existing = self.session.get(IdempotencyRecordModel, record_key)
+            if existing is None or existing.operation != "submit_order":
+                raise
+            return self.get_order(existing.result_id, session_id)
         return self.get_order(order.id, session_id)
 
     def get_order(self, order_id: str, session_id: str) -> OrderView:
@@ -290,7 +297,17 @@ class OrderService:
                 status="pending",
             )
             self.session.add(existing)
-            self.session.commit()
+            try:
+                self.session.commit()
+            except IntegrityError:
+                self.session.rollback()
+                existing = self.session.scalar(
+                    select(CancellationRequestModel).where(
+                        CancellationRequestModel.order_id == order_id
+                    )
+                )
+                if existing is None:
+                    raise
             self.session.refresh(existing)
 
         return CancellationRequestView(

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_session
+from app.api.dependencies import SessionTokenHeader, get_session, verify_session_token
 from app.orders.schemas import CancellationRequestView, CartView, OrderView
 from app.orders.service import OrderService
 
@@ -48,7 +48,9 @@ def get_cart(
     session_id: str,
     table_number: str,
     session: SessionDep,
+    token: SessionTokenHeader = None,
 ) -> CartView:
+    verify_session_token(session, session_id, token)
     return OrderService(session).get_cart(session_id, table_number)
 
 
@@ -58,7 +60,9 @@ def add_cart_item(
     body: AddCartItemRequest,
     session: SessionDep,
     idempotency_key: IdempotencyKey,
+    token: SessionTokenHeader = None,
 ) -> CartView:
+    verify_session_token(session, session_id, token)
     return OrderService(session).add_item(
         session_id,
         body.table_number,
@@ -76,7 +80,9 @@ def change_cart_item(
     body: ChangeCartItemRequest,
     session: SessionDep,
     idempotency_key: IdempotencyKey,
+    token: SessionTokenHeader = None,
 ) -> CartView:
+    verify_session_token(session, session_id, token)
     return OrderService(session).change_item(
         session_id,
         line_id,
@@ -92,7 +98,9 @@ def remove_cart_item(
     line_id: int,
     session: SessionDep,
     idempotency_key: IdempotencyKey,
+    token: SessionTokenHeader = None,
 ) -> CartView:
+    verify_session_token(session, session_id, token)
     return OrderService(session).remove_item(
         session_id,
         line_id,
@@ -108,7 +116,9 @@ def remove_cart_item(
 def submit_order(
     body: SubmitOrderRequest,
     session: SessionDep,
+    token: SessionTokenHeader = None,
 ) -> OrderView:
+    verify_session_token(session, body.session_id, token)
     return OrderService(session).submit(
         body.session_id,
         body.idempotency_key,
@@ -120,7 +130,9 @@ def submit_order(
 def list_orders(
     session_id: str,
     session: SessionDep,
+    token: SessionTokenHeader = None,
 ) -> list[OrderView]:
+    verify_session_token(session, session_id, token)
     return OrderService(session).list_orders(session_id)
 
 
@@ -129,5 +141,7 @@ def request_cancellation(
     order_id: str,
     body: CancellationRequestBody,
     session: SessionDep,
+    token: SessionTokenHeader = None,
 ) -> CancellationRequestView:
+    verify_session_token(session, body.session_id, token)
     return OrderService(session).request_cancellation(order_id, body.session_id, body.reason)

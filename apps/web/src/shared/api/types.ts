@@ -51,12 +51,30 @@ export interface Order {
   items: OrderItem[];
 }
 
+export interface ImageRef {
+  image_id: string;
+  url: string;
+}
+
+export interface Cancellation {
+  id: string;
+  order_id: string;
+  status: string;
+  reason: string;
+  created_at: string;
+}
+
 export type ChatEvent =
-  | { type: "status"; stage: string; route?: string }
+  | { type: "status"; stage: string; route?: string; confidence?: number; reason?: string }
   | { type: "token"; text: string }
   | { type: "evidence"; items: unknown[] }
+  | { type: "rag_trace"; rewritten_query: string; timings_ms: Record<string, number>; degraded_steps: string[]; no_evidence: boolean }
+  | { type: "verification"; passed: boolean; reason: string }
+  | { type: "handoff"; from_agent: string; to_agent: string; menu_item_id: string; user_authorized_write: boolean }
   | { type: "cart"; cart: Cart }
   | { type: "order"; order: Order }
-  | { type: "cancellation"; cancellation: unknown }
+  | { type: "cancellation"; cancellation: Cancellation }
+  | { type: "checkin_card"; caption: string; description: string }
+  | { type: "generated_card"; image_url: string; caption: string }
   | { type: "done"; request_id: string }
   | { type: "error"; message: string; request_id: string };

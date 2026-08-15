@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_rag_index, get_session
+from app.api.dependencies import get_rag_index, get_session, require_admin
 from app.rag.schemas import KnowledgeCreate, KnowledgeUpdate, KnowledgeView, RetrievedDocument
 from app.rag.service import KnowledgeService
 from app.rag.store import QdrantRagIndex
@@ -12,6 +12,7 @@ from app.rag.store import QdrantRagIndex
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 SessionDep = Annotated[Session, Depends(get_session)]
 IndexDep = Annotated[QdrantRagIndex, Depends(get_rag_index)]
+AdminDep = Annotated[None, Depends(require_admin)]
 
 
 class ReindexResult(BaseModel):
@@ -28,6 +29,7 @@ def create_knowledge(
     body: KnowledgeCreate,
     session: SessionDep,
     index: IndexDep,
+    _: AdminDep,
 ) -> KnowledgeView:
     return KnowledgeService(session, index).create(body)
 
@@ -38,6 +40,7 @@ def update_knowledge(
     body: KnowledgeUpdate,
     session: SessionDep,
     index: IndexDep,
+    _: AdminDep,
 ) -> KnowledgeView:
     return KnowledgeService(session, index).update(document_id, body)
 
@@ -47,6 +50,7 @@ def delete_knowledge(
     document_id: str,
     session: SessionDep,
     index: IndexDep,
+    _: AdminDep,
 ) -> Response:
     KnowledgeService(session, index).delete(document_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -63,6 +67,6 @@ def search_knowledge(
 
 
 @router.post("/reindex", response_model=ReindexResult)
-def reindex_knowledge(session: SessionDep, index: IndexDep) -> ReindexResult:
+def reindex_knowledge(session: SessionDep, index: IndexDep, _: AdminDep) -> ReindexResult:
     count = KnowledgeService(session, index).rebuild()
     return ReindexResult(indexed_count=count)

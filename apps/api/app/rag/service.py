@@ -1,7 +1,8 @@
+import threading
 from collections.abc import Iterable, Sequence
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import KnowledgeDocumentModel, now_utc
@@ -28,6 +29,9 @@ class KnowledgeIndex(Protocol):
     def search(self, query: str, limit: int = 5) -> list[RetrievedDocument]: ...
 
     def rebuild(self, chunks: Iterable[IndexedChunk]) -> None: ...
+
+
+_rebuild_lock = threading.Lock()
 
 
 class KnowledgeService:
@@ -86,8 +90,29 @@ class KnowledgeService:
             return results
         if self.session.scalar(select(KnowledgeDocumentModel.id).limit(1)) is None:
             return []
-        self.rebuild()
-        return self.index.search(query, limit)
+        # Index is empty (e.g. cold start or wiped). Rebuild once; if another
+        # request is already rebuilding, skip rather than thundering-herd.
+        if not _rebuild_lock.acquire(blocking=False):
+            return self.index.search(query, limit)
+        try:
+            results = self.index.search(query, limit)
+            if results:
+                return results
+            self.rebuild()
+            return self.index.search(query, limit)
+        finally:
+            _rebuild_lock.release()
+
+    def rebuild_if_pending(self) -> int:
+        """Rebuild the index once if any document is still unindexed."""
+        pending = self.session.scalar(
+            select(func.count())
+            .select_from(KnowledgeDocumentModel)
+            .where(KnowledgeDocumentModel.index_status == "pending")
+        )
+        if not pending:
+            return 0
+        return self.rebuild()
 
     def rebuild(self) -> int:
         documents = list(self.session.scalars(select(KnowledgeDocumentModel)))
